@@ -18,7 +18,7 @@ int main(int argc, char * const * argv)
 	}
 
 	const char *cmd = argv[1];
-	char * const * cmd_argv = &argv[2];
+	char * const * cmd_argv = &argv[1];
 
 	/* launch the command to profile */
 	pid_t child_pid = fork();
