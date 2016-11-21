@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <time.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 /* define logging macros to print diagnostics at different levels to
@@ -80,6 +81,49 @@ char* string(const char *fmt, ...)
 }
 
 
+/* Redirect stdin, stdout, stderr to /dev/null */
+void quiet()
+{
+	const char *msg = NULL;
+
+	int devnull = open("/dev/null", O_RDWR);
+	if (devnull < 0) {
+		msg = "open(\"/dev/null\")";
+		goto _error;
+	}
+	
+	if (dup2(devnull, STDIN_FILENO) < 0) {
+		msg = "dup2(STDIN)";
+		goto _error;
+	}
+	if (dup2(devnull, STDOUT_FILENO) < 0) {
+		msg = "dup2(STDOUT)";
+		goto _error;
+	}
+	if (dup2(devnull, STDERR_FILENO) < 0) {
+		msg = "dup2(STDERR)";
+		goto _error;
+	}
+	if (close(devnull) < 0) {
+		/* something went terribly wrong as the open and dup2
+		 * calls succeeded. We also don't have stdout or
+		 * stderr to send diagnostics. For now, just kill the
+		 * process and let a waitid call in the parent catch
+		 * the failure.
+		 *
+		 * TODO: find better strategy
+		 */
+		CRITICAL("");
+	}
+
+	return;
+	
+_error:
+	ERROR("%s: %s", msg, strerror(errno));
+	exit(EXIT_FAILURE);
+}
+
+
 int main(int argc, char * const * argv)
 {
  	/* parse argv */
@@ -100,6 +144,11 @@ int main(int argc, char * const * argv)
 			ERROR("PTRACE_TRACEME: %s", strerror(errno));
 			return EXIT_FAILURE;
 		}
+		
+		/* Suppress input/output */
+		quiet();
+			
+		/* launch the command */
 		int exec_rc = execvp(cmd, cmd_argv);
 		if (exec_rc < 0) {
 			ERROR("execvp: %s", strerror(errno));
