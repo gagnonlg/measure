@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 /* TODO: change the name */
 struct KeyValue {
 	unsigned long long int key;
+	unsigned long long int key_max;
 	char *value;
 };
 
@@ -210,6 +212,14 @@ struct SymbolTable get_symbol_table(const char *path)
 	table.size = count;
 	xalloc(table.table, table.size);
 
+	/* fill key_max fields */
+	for (size_t i = 0; i < table.size; i++) {
+		table.table[i].key_max =
+			(i == table.size - 1)?
+			UINT64_MAX :
+			table.table[i + 1].key;
+	}
+
 	/* cleanup */
 	FREE(line);
 	if (pclose(stream) < 0) {
@@ -219,6 +229,53 @@ struct SymbolTable get_symbol_table(const char *path)
 
 	return table;
 }
+
+char * get_symbol(struct SymbolTable *table, unsigned long long address)
+{
+	/* Use binary search to get the symbol name 
+         *
+         * TODO: implement memoization
+	 */
+	
+	size_t imin = 0;
+	size_t imax = table->size;
+	char *symbol = NULL;
+	
+	while (!symbol) {
+
+		if (imax < imin) {
+			/* found no symbols. This should not
+			 * happen. If it does, this is a bug, so treat
+			 * it as a failure 
+			 * 
+			 * TODO: should it fail with CRITICAL?
+			 */
+			ERROR("**BUG** no symbols found for address %llx", address);
+			exit(EXIT_FAILURE);
+		}
+
+		size_t i = (imax + imin) / 2;
+
+		if (address < table->table[i].key) {
+			/* address is lower. Upper bound is excluded so 
+                         * no need to decrement i 
+			 */ 
+			imax = i;
+		} else if (address >= table->table[i].key_max) {
+			/* address is higher. Lower bound is included so 
+                         * increment i by 1
+			 */ 
+			imin = i + 1;
+		} else {
+			/* got it */
+			symbol = table->table[i].value;
+		}
+	}
+
+	return symbol;
+}
+
+	      
 
 
 int main(int argc, char * const * argv)
@@ -234,7 +291,12 @@ int main(int argc, char * const * argv)
 
 	/* get the symbol table */
 	struct SymbolTable symbols = get_symbol_table(cmd);
-	INFO("found %d symbols", symbols.size);
+	if (symbols.size > 0) {
+		INFO("found %d symbols", symbols.size);
+	} else {
+		ERROR("no symbols found");
+		exit(EXIT_FAILURE);
+	}
 
 	/* launch the command to profile */
 	pid_t child_pid = fork();
@@ -297,7 +359,7 @@ int main(int argc, char * const * argv)
 		case CLD_TRAPPED:
 			/* sample the instruction pointer */
 			ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-			fprintf(stdout, "%llx\n", regs.rip);
+			fprintf(stdout, "%llx %s\n", regs.rip, get_symbol(&symbols, regs.rip));
 
 			/* restard the tracee and let it work for a short interval */
 			ptrace(PTRACE_CONT, child_pid, NULL, NULL);
