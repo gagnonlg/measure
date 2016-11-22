@@ -11,6 +11,18 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+/* TODO: change the name */
+struct KeyValue {
+	unsigned long long int key;
+	char *value;
+};
+
+struct SymbolTable {
+	size_t size;
+	struct KeyValue *table;
+};
+
+
 /* define logging macros to print diagnostics at different levels to
  * stderr. Accepts printf-style format strings via the 'string'
  * function defined below
@@ -41,12 +53,12 @@
 	} while (0)
 
 
-/* kill the program via CRITICAL if malloc fails */
-void* xmalloc(size_t nbytes)
+/* kill the program via CRITICAL if allocation fails */
+void* xalloc(void *ptr, size_t nbytes)
 {
-	void *ptr = malloc(nbytes);
+	ptr = realloc(ptr, nbytes);
 
-	/* malloc can return NULL if 0 bytes were requested, so check
+	/* realloc can return NULL if 0 bytes were requested, so check
 	 * for this edge case also
 	 */
 	if (nbytes > 0 && !ptr) {
@@ -54,6 +66,17 @@ void* xmalloc(size_t nbytes)
 	}
 	return ptr;
 }
+
+
+void *xmalloc(size_t nbytes)
+{
+	return xalloc(NULL, nbytes);
+}
+
+
+/* Basic safeguard against null pointer free */
+#define FREE(ptr) do { if (ptr) { free(ptr); ptr = NULL; } } while (0)
+
 
 char* string(const char *fmt, ...)
 {
@@ -124,6 +147,80 @@ _error:
 }
 
 
+struct SymbolTable get_symbol_table(const char *path)
+{
+	FILE *stream = NULL;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t read;
+
+	struct SymbolTable table;
+	table.size = 256;
+	table.table = xmalloc(sizeof(struct KeyValue) * table.size);
+
+	/* TODO: quiet this stream, provide own diagnostic in case of error */
+	stream = popen(string("nm --numeric-sort %s", path), "r");
+	if (stream == NULL) {
+		ERROR("popen: %s", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	
+	size_t count = 0;
+	while ((read = getline(&line, &len, stream)) != -1) {
+
+		/* lines are expected to be in the format:
+		 * <address> <type> <symbol>
+		 */
+		char *addr_str = strtok(line, " \n");
+		char *type_str = strtok(NULL, " \n");
+		char *symbol_str = strtok(NULL, " \n");
+		if (!addr_str || !type_str || !symbol_str) {
+			WARNING("malformed line in `nm` output: %s", line);
+			continue;
+		}
+
+		/* make sure the table is big enough */
+		while (count >= table.size) {
+			table.size *= 2;
+			table.table = xalloc(table.table, sizeof(struct KeyValue) * table.size);
+		}
+
+		/* The only reliable way to check for failure here is
+		 * to set errno to 0 before and checking it after
+		 */
+		errno = 0;
+		unsigned long long int addr = strtoull(addr_str, NULL, 16);
+		if (errno != 0) {
+			ERROR("strtoull: %s", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		
+		/* The line pointer gets reused so the symbol string
+		 * must be copied 
+		 */
+		table.table[count].value = xmalloc(strlen(symbol_str) + 1);
+		strcpy(table.table[count].value, symbol_str);
+		/* The address has already been parsed */
+		table.table[count].key = addr;
+		
+		count += 1;
+	}
+
+	/* Shrink the table to exact size */
+	table.size = count;
+	xalloc(table.table, table.size);
+
+	/* cleanup */
+	FREE(line);
+	if (pclose(stream) < 0) {
+		ERROR("pclose: %s", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	return table;
+}
+
+
 int main(int argc, char * const * argv)
 {
  	/* parse argv */
@@ -134,6 +231,10 @@ int main(int argc, char * const * argv)
 
 	const char *cmd = argv[1];
 	char * const * cmd_argv = &argv[1];
+
+	/* get the symbol table */
+	struct SymbolTable symbols = get_symbol_table(cmd);
+	INFO("found %d symbols", symbols.size);
 
 	/* launch the command to profile */
 	pid_t child_pid = fork();
