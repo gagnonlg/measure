@@ -24,6 +24,36 @@ struct SymbolTable {
 	struct KeyValue *table;
 };
 
+struct SymbolCount {
+	char *name;
+	size_t count;
+};
+
+int compar_sym_count(const void * ptr1, const void * ptr2)
+{
+	/* For use with qsort */
+	
+	struct SymbolCount *sym1 = (struct SymbolCount *) ptr1;
+	struct SymbolCount *sym2 = (struct SymbolCount *) ptr2;
+
+        /* We want reverse sorting */
+	return sym2->count - sym1->count;
+}
+	
+struct CountTable {
+	size_t size;
+	size_t capacity;
+	struct SymbolCount *data;
+};
+
+struct CountTable count_table(void)
+{
+	struct CountTable tbl;
+	tbl.size = 0;
+	tbl.capacity = 0;
+	tbl.data = NULL;
+	return tbl;
+}
 
 /* define logging macros to print diagnostics at different levels to
  * stderr. Accepts printf-style format strings via the 'string'
@@ -147,6 +177,33 @@ _error:
 	ERROR("%s: %s", msg, strerror(errno));
 	exit(EXIT_FAILURE);
 }
+
+
+void count_symbol(struct CountTable *tbl, char *name)
+{
+	for (size_t i = 0; i < tbl->size; i++) {
+		if (strcmp(tbl->data[i].name, name) == 0) {
+			/* found it!  */
+			tbl->data[i].count += 1;
+			return;
+		}
+	}
+
+	/* If we get here, the symbol wasn't found in the table so it
+	 * has to be appended. First, make sure there is enough room */
+	while (tbl->size >= tbl->capacity) {
+		tbl->capacity = (tbl->capacity == 0)? 256 : tbl->capacity * 2;
+		tbl->data = xalloc(tbl->data, tbl->capacity * sizeof(struct SymbolCount));
+	}
+
+	/* Then append the symbol with a count of 1. Since the name
+	 *  buffer may be reused outside, copy it in the table.
+	 */
+	tbl->data[tbl->size].name = xmalloc(strlen(name) + 1);
+	strcpy(tbl->data[tbl->size].name, name);
+	tbl->data[tbl->size].count = 1;
+	tbl->size += 1;
+}		
 
 
 struct SymbolTable get_symbol_table(const char *path)
@@ -336,9 +393,11 @@ int main(int argc, char * const * argv)
 	/* restart the tracee right now to simplify the tracing logic
 	 * below 
 	 */
+	INFO("Beginning tracing");
 	ptrace(PTRACE_CONT, child_pid, NULL, NULL);
 
 	struct user_regs_struct regs;
+	struct CountTable counts = count_table();
 	
 	bool tracee_alive = true;
 	while (tracee_alive) {
@@ -359,7 +418,8 @@ int main(int argc, char * const * argv)
 		case CLD_TRAPPED:
 			/* sample the instruction pointer */
 			ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-			fprintf(stdout, "%llx %s\n", regs.rip, get_symbol(&symbols, regs.rip));
+			char *symbol = get_symbol(&symbols, regs.rip);
+			count_symbol(&counts, symbol);
 
 			/* restard the tracee and let it work for a short interval */
 			ptrace(PTRACE_CONT, child_pid, NULL, NULL);
@@ -370,6 +430,13 @@ int main(int argc, char * const * argv)
 		        CRITICAL("reached unreachable code\n");
 		}
 	}
+
+	/* Tracing is finished! Now sort the counts from high to low */
+	qsort(counts.data, counts.size, sizeof(struct SymbolCount), compar_sym_count);
+	/* and print them to stdout */
+	INFO("Tracing finished. Dumping the symbol counts.");
+	for (size_t i = 0; i < counts.size; i++)
+		fprintf(stdout, "%010lu\t%s\n", counts.data[i].count, counts.data[i].name);
 
 	return EXIT_SUCCESS;
 }
