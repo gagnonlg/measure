@@ -142,7 +142,6 @@ struct Config {
 	char * const * cmd_argv;
 };
 
-/* TODO add -h option */
 struct Config get_config(int argc, char * const * argv)
 {
 	struct Config cfg;
@@ -154,7 +153,7 @@ struct Config get_config(int argc, char * const * argv)
 
 	/* Parse the argv */
 	int opt;
-	while ((opt = 	getopt(argc, argv, "+:p:o:")) != -1) {
+	while ((opt = 	getopt(argc, argv, "+:p:o:h")) != -1) {
 		switch (opt) {
 		case 'p':
 			/* Only way to check parsing failure here is to set errno to 0
@@ -163,16 +162,19 @@ struct Config get_config(int argc, char * const * argv)
 			cfg.sampling_period = strtod(optarg, NULL);
 			if (errno != 0 || cfg.sampling_period <= 0) {
 				/* reject null and negative periods */
-				ERROR("Invalid argument for -p: %s\n", optarg);
+				ERROR("Invalid argument for -p: %s", optarg);
 			}
 			break;
 		case 'o':
 			cfg.output_path = optarg;
 			break;
+		case 'h':
+			INFO("usage: measure [-h] [-p <sampling period] [-o <output path>] <command line>");
+			exit(EXIT_SUCCESS);
 		case '?':
-			ERROR("unrecognized option: -%c", optopt);
+			ERROR("unrecognized option: -%c (-h for help)", optopt);
 		case ':':
-			ERROR("missing argument for -%c", optopt);
+			ERROR("missing argument for -%c (-h for help)", optopt);
 		default:
 			/* unreachable */
 			CRITICAL("reached unreachable code in get_config");
@@ -181,7 +183,7 @@ struct Config get_config(int argc, char * const * argv)
 
 	/* Check if a command was specified */
 	if (!argv[optind]) {
-		ERROR("too few arguments (usage: measure [-p <sampling period] [-o <output path>] <command line>)");
+		ERROR("too few arguments (-h for help)");
 	}
 	
 	/* Found a command */
