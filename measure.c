@@ -228,8 +228,6 @@ void quiet()
 		 * stderr to send diagnostics. For now, just kill the
 		 * process and let a waitid call in the parent catch
 		 * the failure.
-		 *
-		 * TODO: find better strategy
 		 */
 		CRITICAL("");
 	}
