@@ -497,17 +497,16 @@ int main(int argc, char * const * argv)
 	}
 
 	/* Tracing is finished! Now sort the counts from high to low */
-	qsort(counts.data, counts.size, sizeof(struct SymbolCount), compar_sym_count);
-	/* and print them to output file 
-	 *
-	 * TODO: validate the output file before tracing?
-	 */
 	INFO("Tracing finished");
+	qsort(counts.data, counts.size, sizeof(struct SymbolCount), compar_sym_count);
+	/* and print them to output file */
 	INFO("Dumping the symbol counts to %s", cfg.output_path);
 	FILE *out = fopen(cfg.output_path, "w");
 	if (!out) {
-		ERROR("unable to open output file %s: %s", cfg.output_path, strerror(errno));
-		exit(EXIT_FAILURE);
+		WARNING("unable to open output file %s: %s", cfg.output_path, strerror(errno));
+		WARNING("Falling back to stdout");
+		/* TODO: return EXIT_FAILURE at end ? */
+		out = stdout;
 	}
 	for (size_t i = 0; i < counts.size; i++)
 		fprintf(out, "%010lu\t%s\n", counts.data[i].count, counts.data[i].name);
