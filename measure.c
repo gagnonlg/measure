@@ -68,7 +68,7 @@ struct CountTable count_table(void)
 /* INFO is for informational messages under normal operation */
 #define INFO(...) LOG("INFO", __VA_ARGS__)
 /* WARNING is used to signal anormal events which are non-fatal */
-#define WARNING(...) LOG("ERROR",__VA_ARGS__)
+#define WARNING(...) LOG("WARNING",__VA_ARGS__)
 /* ERROR is used to signal fatal anormal events. Exiting the program
  * is handled outside of this macro
  *
