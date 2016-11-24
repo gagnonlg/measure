@@ -143,6 +143,7 @@ struct Config {
 	char * const * cmd_argv;
 };
 
+/* TODO add -h option */
 struct Config get_config(int argc, char * const * argv)
 {
 	struct Config cfg;
@@ -181,9 +182,9 @@ struct Config get_config(int argc, char * const * argv)
 
 	/* Check if a command was specified */
 	if (!argv[optind]) {
-		ERROR("No command specified");
+		ERROR("too few arguments (usage: measure [-p <sampling period] [-o <output path>] <command line>)");
 	}
-
+	
 	/* Found a command */
 	cfg.cmd = argv[optind];
 	cfg.cmd_argv = &argv[optind];
@@ -384,14 +385,8 @@ char * get_symbol(struct SymbolTable *table, unsigned long long address)
 int main(int argc, char * const * argv)
 {
 	int rc = EXIT_SUCCESS;
- 	/* parse argv 
-	 * 
-	 * TODO: move this message in get_config
-         */
-	if (argc < 2) {
-		ERROR("too few arguments (usage: measure [-p <sampling period] [-o <output path>] <command line>)");
-	}
 
+ 	/* parse argv */
 	struct Config cfg = get_config(argc, argv);
 
 	/* get the symbol table */
