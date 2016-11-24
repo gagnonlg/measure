@@ -70,11 +70,9 @@ struct CountTable count_table(void)
 /* WARNING is used to signal anormal events which are non-fatal */
 #define WARNING(...) LOG("WARNING",__VA_ARGS__)
 /* ERROR is used to signal fatal anormal events. Exiting the program
- * is handled outside of this macro
- *
- * TODO handle exiting in this macro
+ * is handled by this macro
  */
-#define ERROR(...) LOG("ERROR", __VA_ARGS__)
+#define ERROR(...) do { LOG("ERROR", __VA_ARGS__); exit(EXIT_FAILURE); } while (0)
 
 /* CRITICAL is for fatal errors where the program must abort
  * immediately (e.g.: out of memory). It accepts a normal string
@@ -166,7 +164,6 @@ struct Config get_config(int argc, char * const * argv)
 			if (errno != 0 || cfg.sampling_period <= 0) {
 				/* reject null and negative periods */
 				ERROR("Invalid argument for -p: %s\n", optarg);
-				exit(EXIT_FAILURE);
 			}
 			break;
 		case 'o':
@@ -174,10 +171,8 @@ struct Config get_config(int argc, char * const * argv)
 			break;
 		case '?':
 			ERROR("unrecognized option: -%c", optopt);
-			exit(EXIT_FAILURE);
 		case ':':
 			ERROR("missing argument for -%c", optopt);
-			exit(EXIT_FAILURE);
 		default:
 			/* unreachable */
 			CRITICAL("reached unreachable code in get_config");
@@ -187,7 +182,6 @@ struct Config get_config(int argc, char * const * argv)
 	/* Check if a command was specified */
 	if (!argv[optind]) {
 		ERROR("No command specified");
-		exit(EXIT_FAILURE);
 	}
 
 	/* Found a command */
@@ -236,7 +230,6 @@ void quiet()
 	
 _error:
 	ERROR("%s: %s", msg, strerror(errno));
-	exit(EXIT_FAILURE);
 }
 
 
@@ -281,7 +274,6 @@ struct SymbolTable get_symbol_table(const char *path)
 	/* TODO: quiet this stream, provide own diagnostic in case of error */
 	stream = popen(string("nm --numeric-sort %s", path), "r");
 	if (stream == NULL) {
-		ERROR("popen: %s", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -311,7 +303,6 @@ struct SymbolTable get_symbol_table(const char *path)
 		errno = 0;
 		unsigned long long int addr = strtoull(addr_str, NULL, 16);
 		if (errno != 0) {
-			ERROR("strtoull: %s", strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 		
@@ -342,7 +333,6 @@ struct SymbolTable get_symbol_table(const char *path)
 	FREE(line);
 	if (pclose(stream) < 0) {
 		ERROR("pclose: %s", strerror(errno));
-		exit(EXIT_FAILURE);
 	}
 
 	return table;
@@ -400,7 +390,6 @@ int main(int argc, char * const * argv)
          */
 	if (argc < 2) {
 		ERROR("too few arguments (usage: measure [-p <sampling period] [-o <output path>] <command line>)");
-		return(EXIT_FAILURE);
 	}
 
 	struct Config cfg = get_config(argc, argv);
@@ -411,7 +400,6 @@ int main(int argc, char * const * argv)
 		INFO("found %d symbols", symbols.size);
 	} else {
 		ERROR("no symbols found");
-		exit(EXIT_FAILURE);
 	}
 
 	/* launch the command to profile */
@@ -421,7 +409,6 @@ int main(int argc, char * const * argv)
 		long ptrace_rc = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
 		if (ptrace_rc < 0) {
 			ERROR("PTRACE_TRACEME: %s", strerror(errno));
-			return EXIT_FAILURE;
 		}
 		
 		/* Suppress input/output */
@@ -431,7 +418,6 @@ int main(int argc, char * const * argv)
 		int exec_rc = execvp(cfg.cmd, cfg.cmd_argv);
 		if (exec_rc < 0) {
 			ERROR("execvp: %s", strerror(errno));
-			return EXIT_FAILURE;
 		}
 	}
 		
@@ -443,7 +429,6 @@ int main(int argc, char * const * argv)
 	int wait_rc = waitid(P_PID, child_pid, &infop, WSTOPPED);
 	if (wait_rc < 0) {
 		ERROR("waitid: %s", strerror(errno));
-		return EXIT_FAILURE;
 	}
 
 	/* kill the tracee when we exit */
