@@ -271,10 +271,9 @@ struct SymbolTable get_symbol_table(const char *path)
 	table.size = 256;
 	table.table = xmalloc(sizeof(struct KeyValue) * table.size);
 
-	/* TODO: quiet this stream, provide own diagnostic in case of error */
-	stream = popen(string("nm --numeric-sort %s", path), "r");
+	stream = popen(string("nm --numeric-sort %s 2>/dev/null", path), "r");
 	if (stream == NULL) {
-		exit(EXIT_FAILURE);
+		ERROR("popen: %s", strerror(errno));
 	}
 	
 	size_t count = 0;
@@ -331,8 +330,12 @@ struct SymbolTable get_symbol_table(const char *path)
 
 	/* cleanup */
 	FREE(line);
-	if (pclose(stream) < 0) {
+	int rc = pclose(stream);
+	if (rc < 0) {
 		ERROR("pclose: %s", strerror(errno));
+	}
+	if (rc != 0) {
+		ERROR("unable to read symbols from %s (file not found?)", path);
 	}
 
 	return table;
