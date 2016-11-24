@@ -364,10 +364,8 @@ char * get_symbol(struct SymbolTable *table, unsigned long long address)
 			/* found no symbols. This should not
 			 * happen. If it does, this is a bug, so treat
 			 * it as a failure 
-			 * 
-			 * TODO: should it fail with CRITICAL?
 			 */
-			ERROR("**BUG** no symbols found for address %llx", address);
+			CRITICAL(string("no symbols found for address %llx", address));
 			exit(EXIT_FAILURE);
 		}
 
