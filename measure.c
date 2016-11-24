@@ -71,6 +71,8 @@ struct CountTable count_table(void)
 #define WARNING(...) LOG("ERROR",__VA_ARGS__)
 /* ERROR is used to signal fatal anormal events. Exiting the program
  * is handled outside of this macro
+ *
+ * TODO handle exiting in this macro
  */
 #define ERROR(...) LOG("ERROR", __VA_ARGS__)
 
@@ -83,6 +85,7 @@ struct CountTable count_table(void)
 		fprintf(stderr, "%ld measure CRITICAL %s\n", time(NULL), msg); \
 		exit(EXIT_FAILURE);					\
 	} while (0)
+
 
 
 /* kill the program via CRITICAL if allocation fails */
@@ -134,6 +137,66 @@ char* string(const char *fmt, ...)
 
 	return str;
 }
+
+struct Config {
+	const char *output_path;
+	double sampling_period;
+        const char *cmd;
+	char * const * cmd_argv;
+};
+
+struct Config get_config(int argc, char * const * argv)
+{
+	struct Config cfg;
+	cfg.output_path = "/dev/stdout";
+	cfg.sampling_period = 0.001;
+
+	/* Turn off the getopt error messages */
+	opterr = 0;
+
+	/* Parse the argv */
+	int opt;
+	while ((opt = 	getopt(argc, argv, "+:p:o:")) != -1) {
+		switch (opt) {
+		case 'p':
+			/* Only way to check parsing failure here is to set errno to 0
+			   and check it after the strtod call */
+			errno = 0;
+			cfg.sampling_period = strtod(optarg, NULL);
+			if (errno != 0 || cfg.sampling_period <= 0) {
+				/* reject null and negative periods */
+				ERROR("Invalid argument for -p: %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case 'o':
+			cfg.output_path = optarg;
+			break;
+		case '?':
+			ERROR("unrecognized option: -%c", optopt);
+			exit(EXIT_FAILURE);
+		case ':':
+			ERROR("missing argument for -%c", optopt);
+			exit(EXIT_FAILURE);
+		default:
+			/* unreachable */
+			CRITICAL("reached unreachable code in get_config");
+		}
+	}
+
+	/* Check if a command was specified */
+	if (!argv[optind]) {
+		ERROR("No command specified");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Found a command */
+	cfg.cmd = argv[optind];
+	cfg.cmd_argv = &argv[optind];
+
+	return cfg;
+}
+
 
 
 /* Redirect stdin, stdout, stderr to /dev/null */
@@ -337,17 +400,19 @@ char * get_symbol(struct SymbolTable *table, unsigned long long address)
 
 int main(int argc, char * const * argv)
 {
- 	/* parse argv */
+ 	/* parse argv 
+	 * 
+	 * TODO: move this message in get_config
+         */
 	if (argc < 2) {
-		ERROR("too few arguments (usage: measure <command line>)");
+		ERROR("too few arguments (usage: measure [-p <sampling period] [-o <output path>] <command line>)");
 		return(EXIT_FAILURE);
 	}
 
-	const char *cmd = argv[1];
-	char * const * cmd_argv = &argv[1];
+	struct Config cfg = get_config(argc, argv);
 
 	/* get the symbol table */
-	struct SymbolTable symbols = get_symbol_table(cmd);
+	struct SymbolTable symbols = get_symbol_table(cfg.cmd);
 	if (symbols.size > 0) {
 		INFO("found %d symbols", symbols.size);
 	} else {
@@ -369,7 +434,7 @@ int main(int argc, char * const * argv)
 		quiet();
 			
 		/* launch the command */
-		int exec_rc = execvp(cmd, cmd_argv);
+		int exec_rc = execvp(cfg.cmd, cfg.cmd_argv);
 		if (exec_rc < 0) {
 			ERROR("execvp: %s", strerror(errno));
 			return EXIT_FAILURE;
@@ -423,7 +488,7 @@ int main(int argc, char * const * argv)
 
 			/* restard the tracee and let it work for a short interval */
 			ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-			sleep(0.0001);
+			sleep(cfg.sampling_period);
 			break;
 		default:
 			/* unreachable */
@@ -433,10 +498,20 @@ int main(int argc, char * const * argv)
 
 	/* Tracing is finished! Now sort the counts from high to low */
 	qsort(counts.data, counts.size, sizeof(struct SymbolCount), compar_sym_count);
-	/* and print them to stdout */
-	INFO("Tracing finished. Dumping the symbol counts.");
+	/* and print them to output file 
+	 *
+	 * TODO: validate the output file before tracing?
+	 */
+	INFO("Tracing finished");
+	INFO("Dumping the symbol counts to %s", cfg.output_path);
+	FILE *out = fopen(cfg.output_path, "w");
+	if (!out) {
+		ERROR("unable to open output file %s: %s", cfg.output_path, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 	for (size_t i = 0; i < counts.size; i++)
-		fprintf(stdout, "%010lu\t%s\n", counts.data[i].count, counts.data[i].name);
+		fprintf(out, "%010lu\t%s\n", counts.data[i].count, counts.data[i].name);
+	fclose(out);
 
 	return EXIT_SUCCESS;
 }
