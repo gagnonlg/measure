@@ -397,6 +397,7 @@ char * get_symbol(struct SymbolTable *table, unsigned long long address)
 
 int main(int argc, char * const * argv)
 {
+	int rc = EXIT_SUCCESS;
  	/* parse argv 
 	 * 
 	 * TODO: move this message in get_config
@@ -502,12 +503,12 @@ int main(int argc, char * const * argv)
 	if (!out) {
 		WARNING("unable to open output file %s: %s", cfg.output_path, strerror(errno));
 		WARNING("Falling back to stdout");
-		/* TODO: return EXIT_FAILURE at end ? */
+		rc = EXIT_FAILURE;
 		out = stdout;
 	}
 	for (size_t i = 0; i < counts.size; i++)
 		fprintf(out, "%010lu\t%s\n", counts.data[i].count, counts.data[i].name);
 	fclose(out);
 
-	return EXIT_SUCCESS;
+	return rc;
 }
