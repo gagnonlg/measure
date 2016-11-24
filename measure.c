@@ -352,10 +352,7 @@ struct SymbolTable get_symbol_table(const char *path)
 
 char * get_symbol(struct SymbolTable *table, unsigned long long address)
 {
-	/* Use binary search to get the symbol name 
-         *
-         * TODO: implement memoization
-	 */
+	/* Use binary search to get the symbol name */
 	
 	size_t imin = 0;
 	size_t imax = table->size;
