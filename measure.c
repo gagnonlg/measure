@@ -12,7 +12,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-/* TODO: change the name */
 struct KeyValue {
 	unsigned long long int key;
 	unsigned long long int key_max;
