@@ -466,7 +466,8 @@ int main(int argc, char * const * argv)
 
 			/* restard the tracee and let it work for a short interval */
 			ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-			sleep(cfg.sampling_period);
+			/* time in microsecond * 1000 = milliseconds, * 1000 = seconds */
+			usleep(cfg.sampling_period * 1000 * 1000);
 			break;
 		default:
 			/* unreachable */
